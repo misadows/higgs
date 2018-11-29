@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, accuracy_score
 import sys
 
 def train(model, dataset, batch_size=128):
@@ -9,9 +9,9 @@ def train(model, dataset, batch_size=128):
     losses = []
 
     for i in range(epoch_size):
-        x, wa, wb, filt = dataset.next_batch(batch_size)
+        x, wa, wa02, wa04, wa06, wa08, wb, filt = dataset.next_batch(batch_size)
         loss, _ = sess.run([model.loss, model.train_op],
-                           {model.x: x, model.wa: wa, model.wb: wb})
+                           {model.x: x, model.wa: wa,  model.wa02: wa02,  model.wa04: wa04, model.wa06: wa06, model.wa08: wa08, model.wb: wb})
         losses.append(loss)
         if i % (epoch_size / 10) == 5:
           sys.stdout.write(". %.3f " % np.mean(losses))
@@ -20,6 +20,7 @@ def train(model, dataset, batch_size=128):
 
 
 def total_train(model, data, emodel=None, batch_size=128, epochs=25):
+    sess = tf.get_default_session()
     if emodel is None:
         emodel = model
     train_aucs = []
@@ -30,8 +31,10 @@ def total_train(model, data, emodel=None, batch_size=128, epochs=25):
     for i in range(epochs):
         sys.stdout.write("EPOCH: %d " % (i + 1))
         loss = train(model, data.train, batch_size)
-        train_auc = evaluate(emodel, data.train, 100000, filtered=True)
+        #train_auc = evaluate(emodel, data.train, 100000, filtered=True)
+        train_auc = 0
         valid_auc = evaluate(emodel, data.valid, filtered=True)
+        #p = sess.run(valid_auc[0], {model.x: data.x})
         msg_str = "TRAIN LOSS: %.3f AUC: %.3f VALID AUC: %.3f" % (loss, train_auc, valid_auc)
         print msg_str
         tf.logging.info(msg_str)
@@ -44,6 +47,10 @@ def predictions(model, dataset, at_most=None, filtered=False):
     sess = tf.get_default_session()
     x = dataset.x
     wa = dataset.wa
+    wa02 = dataset.wa02
+    wa04 = dataset.wa04
+    wa06 = dataset.wa06
+    wa08 = dataset.wa08
     wb = dataset.wb
     filt = dataset.filt
 
@@ -59,20 +66,36 @@ def predictions(model, dataset, at_most=None, filtered=False):
       p = p[filt == 1]
       x = x[filt == 1]
       wa = wa[filt == 1]
+      wa02 = wa02[filt == 1]
+      wa04 = wa04[filt == 1]
+      wa06 = wa06[filt == 1]
+      wa08 = wa08[filt == 1]
       wb = wb[filt == 1]
 
-    return x, p, wa, wb
+    return x, p, wa, wa02, wa04, wa06, wa08, wb
 
 
 def evaluate(model, dataset, at_most=None, filtered=False):
-    _, ps, was, wbs = predictions(model, dataset, at_most, filtered)
+    _, ps, was, wa02, wa04, wa06, wa08, wbs = predictions(model, dataset, at_most, filtered)
 
-    return evaluate_preds(ps, was, wbs)    
+    was = np.reshape(was, [-1, 1])
+    wa02 = np.reshape(wa02, [-1, 1])
+    wa04 = np.reshape(wa04, [-1, 1])
+    wa06 = np.reshape(wa06, [-1, 1])
+    wa08 = np.reshape(wa08, [-1, 1])
+    wbs = np.reshape(wbs, [-1, 1])
+    labels = np.concatenate([was, wa02, wa04, wa06, wa08, wbs], axis=1)  # / (wa + wb + 1) # + 1 should be here
+
+    #labels = tf.one_hot(tf.argmax(labels, axis=1), depth=1)
+    #preds = tf.one_hot(tf.argmax(ps, axis=1), depth=1)
+    return (np.argmax(labels,axis=1) == np.argmax(ps, axis=1)).mean()
+    return accuracy_score(labels, preds)
+    #return evaluate_preds(ps, was, wbs)
     # replace by line below to get max sensitivity
     #return evaluate_preds(was/(was+wbs), was, wbs)
 
 def evaluate2(model, dataset, at_most=None, filtered=False):
-    _, ps, was, wbs = predictions(model, dataset, at_most, filtered)
+    _, ps, was, wa02, wa04, wa06, wa08, wbs = predictions(model, dataset, at_most, filtered)
 
     return evaluate_preds(was/(was+wbs), was, wbs)
 
@@ -108,6 +131,10 @@ class NeuralNetwork(object):
         batch_size = None
         self.x = x = tf.placeholder(tf.float32, [batch_size, num_features])
         self.wa = wa = tf.placeholder(tf.float32, [batch_size])
+        self.wa02 = wa02 = tf.placeholder(tf.float32, [batch_size])
+        self.wa04 = wa04 = tf.placeholder(tf.float32, [batch_size])
+        self.wa06 = wa06 = tf.placeholder(tf.float32, [batch_size])
+        self.wa08 = wa08 = tf.placeholder(tf.float32, [batch_size])
         self.wb = wb = tf.placeholder(tf.float32, [batch_size])
 
         if input_noise > 0.0:
@@ -126,18 +153,24 @@ class NeuralNetwork(object):
               tf.nn.sigmoid_cross_entropy_with_logits(
                   logits=x, labels=tf.reshape(y, [-1, 1])))
         elif tloss == "soft":
-            sx = linear(x, "regression", 3)
+            sx = linear(x, "regression", 6)
             self.preds = preds = tf.nn.softmax(sx)
-            self.p = preds[:, 0] / (preds[:, 0] + preds[:, 1])
+            #self.p = preds[:, 0] / (preds[:, 0] + preds[:, 1])
+            self.p = self.preds
 
             wa = tf.reshape(wa, [-1, 1])
+            wa02 = tf.reshape(wa02, [-1, 1])
+            wa04 = tf.reshape(wa04, [-1, 1])
+            wa06 = tf.reshape(wa06, [-1, 1])
+            wa08 = tf.reshape(wa08, [-1, 1])
             wb = tf.reshape(wb, [-1, 1])
             # wa = p_a / p_c
             # wb = p_b / p_c
             # wa + wb + 1 = (p_a + p_b + p_c) / p_c
             # wa / (wa + wb + 1) = p_a / (p_a + p_b + p_c)
-            labels = tf.concat([wa, wb, tf.ones_like(wa)], axis=1) / (wa + wb + 1) # + 1 should be here
-
+            labels = tf.concat([wa, wa02, wa04, wa06, wa08, wb], axis=1) #/ (wa + wb + 1) # + 1 should be here
+            labels /= tf.tile(tf.reshape( tf.reduce_max(labels, axis=1), [-1,1]), [1, 6])
+            ## labels = tf.one_hot(tf.argmax(labels, axis=1), depth=1)
             self.loss = loss = tf.nn.softmax_cross_entropy_with_logits(logits=sx, labels=labels)
         else:
             raise ValueError("tloss unrecognized: %s" % tloss)

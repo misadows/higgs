@@ -2,10 +2,15 @@ import numpy as np
 import random
 
 class Dataset(object):
-    def __init__(self, x, wa, wb):
+    def __init__(self, x, wa, wa02, wa04, wa06, wa08, wb):
         self.x = x[:, :-1]
         self.filt = x[:, -1]
         self.wa = wa
+        self.wa02 = wa02
+        self.wa04 = wa04
+        self.wa06 = wa06
+        self.wa08 = wa08
+
         self.wb = wb
 
         self.n = x.shape[0]
@@ -17,6 +22,10 @@ class Dataset(object):
         np.random.shuffle(perm)
         self.x = self.x[perm]
         self.wa = self.wa[perm]
+        self.wa02 = self.wa02[perm]
+        self.wa04 = self.wa04[perm]
+        self.wa06 = self.wa06[perm]
+        self.wa08 = self.wa08[perm]
         self.wb = self.wb[perm]
         self.filt = self.filt[perm]
         self._next_id = 0
@@ -29,6 +38,10 @@ class Dataset(object):
         self._next_id += batch_size
         return (self.x[cur_id:cur_id+batch_size],
                 self.wa[cur_id:cur_id+batch_size],
+                self.wa02[cur_id:cur_id+batch_size],
+                self.wa04[cur_id:cur_id+batch_size],
+                self.wa06[cur_id:cur_id+batch_size],
+                self.wa08[cur_id:cur_id+batch_size],
                 self.wb[cur_id:cur_id+batch_size],
                 self.filt[cur_id:cur_id+batch_size])
 
@@ -40,7 +53,7 @@ def read_np(filename):
 
 class EventDatasets(object):
 
-    def __init__(self, event, w_a, w_b, perm, filtered=False, raw=False, miniset=False,  unweighted=False):
+    def __init__(self, event, w_a, wa02, wa04, wa06, wa08, w_b, perm, filtered=False, raw=False, miniset=False,  unweighted=False):
         data = event.cols[:, :-1]
         filt = event.cols[:, -1]
 
@@ -75,7 +88,6 @@ class EventDatasets(object):
             w_a = np.array(map(unweight, w_a))
             w_b = np.array(map(unweight, w_b))
 
-
-        self.train = Dataset(data[train_ids], w_a[train_ids], w_b[train_ids])
-        self.valid = Dataset(data[valid_ids], w_a[valid_ids], w_b[valid_ids])
-        self.test = Dataset(data[test_ids], w_a[test_ids], w_b[test_ids])
+        self.train = Dataset(data[train_ids], w_a[train_ids], wa02[train_ids], wa04[train_ids], wa06[train_ids], wa08[train_ids], w_b[train_ids])
+        self.valid = Dataset(data[valid_ids], w_a[valid_ids],wa02[valid_ids], wa04[valid_ids], wa06[valid_ids], wa08[valid_ids], w_b[valid_ids])
+        self.test = Dataset(data[test_ids], w_a[test_ids],wa02[test_ids], wa04[test_ids], wa06[test_ids], wa08[test_ids], w_b[test_ids])
